@@ -165,6 +165,12 @@ class FusedAdamV1(torch.optim.Optimizer):
                     state['exp_avg'] = torch.zeros_like(p_data_fp32)
                     # Exponential moving average of squared gradient values
                     state['exp_avg_sq'] = torch.zeros_like(p_data_fp32)
+
+                    # suggested fix https://github.com/pytorch/fairseq/issues/1683
+                    if state['exp_avg'].device != p.device:
+                        state['exp_avg'] = state['exp_avg'].to(p.device)
+                    if state['exp_avg_sq'].device != p.device:
+                        state['exp_avg_sq'] = state['exp_avg_sq'].to(p.device)
                 else:
                     state['exp_avg'] = state['exp_avg'].type_as(p_data_fp32)
                     state['exp_avg_sq'] = state['exp_avg_sq'].type_as(p_data_fp32)
@@ -255,6 +261,12 @@ try:
                         state['exp_avg'] = torch.zeros_like(p.data, dtype=torch.float)
                         # Exponential moving average of squared gradient values
                         state['exp_avg_sq'] = torch.zeros_like(p.data, dtype=torch.float)
+
+                        # suggested fix https://github.com/pytorch/fairseq/issues/1683
+                        if state['exp_avg'].device != p.device:
+                            state['exp_avg'] = state['exp_avg'].to(p.device)
+                        if state['exp_avg_sq'].device != p.device:
+                            state['exp_avg_sq'] = state['exp_avg_sq'].to(p.device)
 
                     if p.dtype == torch.float16:
                         g_16.append(p.grad.data.float())
