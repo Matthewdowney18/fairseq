@@ -160,7 +160,6 @@ class FusedAdamV1(torch.optim.Optimizer):
 
                 # State initialization
                 if len(state) == 0:
-                    print(f'\n\n\n\n\n\nI am here! 163\nmy device: {p.device}\n\n\n\n\n')
                     state['step'] = 0
                     # Exponential moving average of gradient values
                     state['exp_avg'] = torch.zeros_like(p_data_fp32, device=p.device)
@@ -171,8 +170,11 @@ class FusedAdamV1(torch.optim.Optimizer):
                     state['exp_avg'] = state['exp_avg'].type_as(p_data_fp32)
                     state['exp_avg_sq'] = state['exp_avg_sq'].type_as(p_data_fp32)
 
-                print('\n\n\n\n\n\nI am here! 175\n\n\n\n\n\n')
                 # suggested fix https://github.com/pytorch/fairseq/issues/1683
+                if state['exp_avg'].device != p.device:
+                    state['exp_avg'] = state['exp_avg'].to(p.device)
+                if state['exp_avg_sq'].device != p.device:
+                    state['exp_avg_sq'] = state['exp_avg_sq'].to(p.device)
 
                 exp_avg = state['exp_avg']
                 exp_avg_sq = state['exp_avg_sq']
@@ -256,13 +258,17 @@ try:
                     state = self.state[p]
                     # State initialization
                     if len(state) == 0:
-                        print('\n\n\n\n\n\nI am here! 261\nmy device: {p.device}\n\n\n\n\n')
                         # Exponential moving average of gradient values
                         state['exp_avg'] = torch.zeros_like(p.data, dtype=torch.float, device=p.device)
                         # Exponential moving average of squared gradient values
                         state['exp_avg_sq'] = torch.zeros_like(p.data, dtype=torch.float, device=p.device)
 
-                    print('\n\n\n\n\n\nI am here! 267\n\n\n\n\n\n')
+                    # suggested fix https://github.com/pytorch/fairseq/issues/1683
+                    print('\n\n\n\n\n\nI am here! 267\nmy device: {p.device}\n\n\n\n\n')
+                    if state['exp_avg'].device != p.device:
+                        state['exp_avg'] = state['exp_avg'].to(p.device)
+                    if state['exp_avg_sq'].device != p.device:
+                        state['exp_avg_sq'] = state['exp_avg_sq'].to(p.device)
 
                     if p.dtype == torch.float16:
                         g_16.append(p.grad.data.float())
