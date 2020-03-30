@@ -263,8 +263,8 @@ try:
                         # Exponential moving average of squared gradient values
                         state['exp_avg_sq'] = torch.zeros_like(p.data, dtype=torch.float, device=p.device)
 
+                    # TODO: remove this from the loop
                     # suggested fix https://github.com/pytorch/fairseq/issues/1683
-                    print('\n\n\n\n\n\nI am here! 267\nmy device: {p.device}\n\n\n\n\n')
                     if state['exp_avg'].device != p.device:
                         state['exp_avg'] = state['exp_avg'].to(p.device)
                     if state['exp_avg_sq'].device != p.device:
