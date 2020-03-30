@@ -1,3 +1,8 @@
+# Note
+
+This is an unofficial branch of fariseq that adds wandb.ai support.
+Fairseq authors does not seem to accept [my PR](https://github.com/pytorch/fairseq/issues/1790) so I decided to maintain this branch.
+
 <p align="center">
   <img src="fairseq_logo.png" width="150">
   <br />
