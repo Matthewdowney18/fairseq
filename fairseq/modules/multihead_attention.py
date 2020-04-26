@@ -141,6 +141,7 @@ class MultiheadAttention(nn.Module):
 
         if (
             self.enable_torch_version
+            and not need_head_weights
             and not self.onnx_trace
             and incremental_state is None
             and not static_kv
