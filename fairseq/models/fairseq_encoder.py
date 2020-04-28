@@ -14,6 +14,7 @@ EncoderOut = NamedTuple(
         ("encoder_padding_mask", Tensor),  # B x T
         ("encoder_embedding", Tensor),  # B x T x C
         ("encoder_states", Optional[List[Tensor]]),  # List[T x B x C]
+        ("attn_head_weight", Optional[List[Tensor]]), # List[H x B x T x T]
     ],
 )
 

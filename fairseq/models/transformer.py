@@ -248,6 +248,8 @@ class TransformerModel(FairseqEncoderDecoderModel):
         features_only: bool = False,
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
+        return_attn: bool = True,
+        return_head_weights: bool = True,
     ):
         """
         Run the forward pass for an encoder-decoder model.
@@ -255,13 +257,18 @@ class TransformerModel(FairseqEncoderDecoderModel):
         Copied from the base class, but without ``**kwargs``,
         which are not supported by TorchScript.
         """
+        if return_head_weights:
+            return_attn = True
+
         encoder_out = self.encoder(
             src_tokens,
             src_lengths=src_lengths,
             cls_input=cls_input,
             return_all_hiddens=return_all_hiddens,
+            need_attn=return_attn,
+            need_head_weights = return_head_weights,
         )
-        decoder_out = self.decoder(
+        decoder_out, extra, weights = self.decoder(
             prev_output_tokens,
             encoder_out=encoder_out,
             features_only=features_only,
@@ -269,8 +276,14 @@ class TransformerModel(FairseqEncoderDecoderModel):
             alignment_heads=alignment_heads,
             src_lengths=src_lengths,
             return_all_hiddens=return_all_hiddens,
+            need_attn=return_attn,
+            need_head_weights=return_head_weights,
         )
-        return decoder_out
+        if return_attn:
+            weights += encoder_out.attn_head_weight
+        else:
+            weights = None
+        return decoder_out, weights
 
     # Since get_normalized_probs is in the Fairseq Model which is not scriptable,
     # I rewrite the get_normalized_probs from Base Class to call the
@@ -425,6 +438,8 @@ class TransformerEncoder(FairseqEncoder):
         src_lengths,
         cls_input: Optional[Tensor] = None,
         return_all_hiddens: bool = False,
+        need_attn: bool = False,
+        need_head_weights: bool = False,
     ):
         """
         Args:
@@ -434,6 +449,9 @@ class TransformerEncoder(FairseqEncoder):
                 shape `(batch)`
             return_all_hiddens (bool, optional): also return all of the
                 intermediate hidden states (default: False).
+            need_attn (bool, optional): return attention weights
+            need_head_weights (bool, optional): return attention weights
+                for each head (default: return average over heads).
 
         Returns:
             namedtuple:
@@ -447,6 +465,13 @@ class TransformerEncoder(FairseqEncoder):
                   hidden states of shape `(src_len, batch, embed_dim)`.
                   Only populated if *return_all_hiddens* is True.
         """
+
+        if need_head_weights:
+            need_attn = True
+            weights = list()
+        else:
+            weights = None
+
         if self.layer_wise_attention:
             return_all_hiddens = True
 
@@ -465,7 +490,11 @@ class TransformerEncoder(FairseqEncoder):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             dropout_probability = torch.empty(1).uniform_()
             if not self.training or (dropout_probability > self.encoder_layerdrop):
-                x = layer(x, encoder_padding_mask)
+                x, attn = layer(x, encoder_padding_mask,
+                                   need_attn=need_attn,
+                                   need_head_weights=need_head_weights)
+                if need_attn:
+                    weights += attn
                 if return_all_hiddens:
                     assert encoder_states is not None
                     encoder_states.append(x)
@@ -480,6 +509,7 @@ class TransformerEncoder(FairseqEncoder):
             encoder_padding_mask=encoder_padding_mask,  # B x T
             encoder_embedding=encoder_embedding,  # B x T x C
             encoder_states=encoder_states,  # List[T x B x C]
+            attn_head_weight=weights
         )
 
     @torch.jit.export
@@ -679,6 +709,8 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         alignment_heads: Optional[int] = None,
         src_lengths: Optional[Any] = None,
         return_all_hiddens: bool = False,
+        need_attn: bool = True,
+        need_head_weights: bool = True,
     ):
         """
         Args:
@@ -690,22 +722,28 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 :ref:`Incremental decoding`
             features_only (bool, optional): only return features without
                 applying output layer (default: False).
+            need_attn (bool, optional): return attention weights
+            need_head_weights (bool, optional): return attention weights
+                for each head (default: return average over heads).
 
         Returns:
             tuple:
                 - the decoder's output of shape `(batch, tgt_len, vocab)`
                 - a dictionary with any model-specific outputs
         """
-        x, extra = self.extract_features(
+
+        x, extra, weights = self.extract_features(
             prev_output_tokens,
             encoder_out=encoder_out,
             incremental_state=incremental_state,
             alignment_layer=alignment_layer,
             alignment_heads=alignment_heads,
+            need_attn=need_attn,
+            need_head_weights=need_head_weights,
         )
         if not features_only:
             x = self.output_layer(x)
-        return x, extra
+        return x, extra, weights
 
     def extract_features(
         self,
@@ -715,6 +753,8 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         full_context_alignment: bool = False,
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
+        need_attn: bool = True,
+        need_head_weights: bool = True,
     ):
         """
         Similar to *forward* but only return features.
@@ -735,6 +775,12 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 - the decoder's features of shape `(batch, tgt_len, embed_dim)`
                 - a dictionary with any model-specific outputs
         """
+        if need_head_weights or need_attn:
+            need_attn = True
+            weights = list()
+        else:
+            weights = None
+
         if alignment_layer is None:
             alignment_layer = self.num_layers - 1
 
@@ -774,7 +820,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             self_attn_padding_mask = prev_output_tokens.eq(self.padding_idx)
 
         # decoder layers
-        attn: Optional[Tensor] = None
+        attn: Optional[List[Tensor]] = None
         inner_states: List[Optional[Tensor]] = [x]
         for idx, layer in enumerate(self.layers):
             encoder_state: Optional[Tensor] = None
@@ -791,10 +837,15 @@ class TransformerDecoder(FairseqIncrementalDecoder):
             else:
                 self_attn_mask = None
 
+            if bool((idx == alignment_layer)):
+                need_head_weights = True
+            if bool((idx == alignment_layer)):
+                need_attn = True
+
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             dropout_probability = torch.empty(1).uniform_()
             if not self.training or (dropout_probability > self.decoder_layerdrop):
-                x, layer_attn, _ = layer(
+                x, layer_attn = layer(
                     x,
                     encoder_state,
                     encoder_out.encoder_padding_mask
@@ -803,19 +854,22 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                     incremental_state,
                     self_attn_mask=self_attn_mask,
                     self_attn_padding_mask=self_attn_padding_mask,
-                    need_attn=bool((idx == alignment_layer)),
-                    need_head_weights=bool((idx == alignment_layer)),
+                    need_head_weights=need_head_weights,
+                    need_attn=need_attn,
                 )
                 inner_states.append(x)
                 if layer_attn is not None and idx == alignment_layer:
-                    attn = layer_attn.float().to(x)
+                    attn = layer_attn[0].float().to(x)
+
+                if need_attn:
+                    weights+=layer_attn
 
         if attn is not None:
             if alignment_heads is not None:
                 attn = attn[:alignment_heads]
 
             # average probabilities over heads
-            attn = attn.mean(dim=0)
+        #   attn = attn.mean(dim=0)
 
         if self.layer_norm is not None:
             x = self.layer_norm(x)
@@ -826,7 +880,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         if self.project_out_dim is not None:
             x = self.project_out_dim(x)
 
-        return x, {"attn": [attn], "inner_states": inner_states}
+        return x, {"attn": [attn], "inner_states": inner_states}, weights
 
     def output_layer(self, features):
         """Project features to the vocabulary size."""

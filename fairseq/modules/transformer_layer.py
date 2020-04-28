@@ -65,7 +65,13 @@ class TransformerEncoderLayer(nn.Module):
                     state_dict["{}.{}.{}".format(name, new, m)] = state_dict[k]
                     del state_dict[k]
 
-    def forward(self, x, encoder_padding_mask, attn_mask: Optional[Tensor] = None):
+    def forward(self,
+                x,
+                encoder_padding_mask,
+                attn_mask: Optional[Tensor] = None,
+                need_attn: bool = False,
+                need_head_weights: bool = False,
+    ):
         """
         Args:
             x (Tensor): input to the layer of shape `(seq_len, batch, embed_dim)`
@@ -77,10 +83,20 @@ class TransformerEncoderLayer(nn.Module):
             attn_mask[t_tgt, t_src] = 1 means when calculating embedding
             for t_tgt, t_src is excluded (or masked out), =0 means it is
             included in attention
+            need_attn (bool, optional): return attention weights
+            need_head_weights (bool, optional): return attention weights
+                for each head (default: return average over heads).
 
         Returns:
             encoded output of shape `(seq_len, batch, embed_dim)`
+            attention weights
         """
+        if need_head_weights or need_attn:
+            need_attn = True
+            weights = list()
+        else:
+            weights = None
+
         residual = x
         if self.normalize_before:
             x = self.self_attn_layer_norm(x)
@@ -93,13 +109,17 @@ class TransformerEncoderLayer(nn.Module):
         # will become -inf, which results in NaN in model parameters
         # TODO: to formally solve this problem, we need to change fairseq's
         # MultiheadAttention. We will do this later on.
-        x, _ = self.self_attn(
+        x, attn = self.self_attn(
             query=x,
             key=x,
             value=x,
             key_padding_mask=encoder_padding_mask,
             attn_mask=attn_mask,
+            need_weights=need_attn,
+            need_head_weights=need_head_weights
         )
+        if need_attn:
+            weights.append(attn)
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = residual + x
         if not self.normalize_before:
@@ -115,7 +135,7 @@ class TransformerEncoderLayer(nn.Module):
         x = residual + x
         if not self.normalize_before:
             x = self.final_layer_norm(x)
-        return x
+        return x, weights
 
 
 class TransformerDecoderLayer(nn.Module):
@@ -216,8 +236,11 @@ class TransformerDecoderLayer(nn.Module):
         Returns:
             encoded output of shape `(seq_len, batch, embed_dim)`
         """
-        if need_head_weights:
+        if need_head_weights or need_attn:
             need_attn = True
+            weights = list()
+        else:
+            weights = None
 
         residual = x
         if self.normalize_before:
@@ -263,9 +286,12 @@ class TransformerDecoderLayer(nn.Module):
             value=y,
             key_padding_mask=self_attn_padding_mask,
             incremental_state=incremental_state,
-            need_weights=False,
+            need_weights=need_attn,
+            need_head_weights=need_head_weights,
             attn_mask=self_attn_mask,
         )
+        if need_attn:
+            weights.append(attn)
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = residual + x
         if not self.normalize_before:
@@ -296,6 +322,8 @@ class TransformerDecoderLayer(nn.Module):
                 need_weights=need_attn or (not self.training and self.need_attn),
                 need_head_weights=need_head_weights,
             )
+            if need_attn:
+                weights.append(attn)
             x = F.dropout(x, p=self.dropout, training=self.training)
             x = residual + x
             if not self.normalize_before:
@@ -322,8 +350,8 @@ class TransformerDecoderLayer(nn.Module):
                 ]
             else:
                 self_attn_state = [saved_state["prev_key"], saved_state["prev_value"]]
-            return x, attn, self_attn_state
-        return x, attn, None
+            return x, weights, self_attn_state
+        return x, weights
 
     def make_generation_fast_(self, need_attn: bool = False, **kwargs):
         self.need_attn = need_attn
