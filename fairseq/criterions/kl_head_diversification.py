@@ -86,7 +86,7 @@ class KLHeadDiversificationCriterion(FairseqCriterion):
 
         def calculate_kl_div_reward(self, weights):
             """weights = list(tesnor([num_heads, batch_size, dim_q, dim_k]))"""
-            kl_scores = torch.tensor([])
+            kl_scores = list()
             for weight in weights:
                 # need to say what gpu to send tensor
                 # concat is very bad
@@ -101,8 +101,8 @@ class KLHeadDiversificationCriterion(FairseqCriterion):
                 p_mat = torch.cat(p_mats, 0)
                 q_mat = torch.cat(q_mats, 0)
                 score = self.KL_div(p_mat, q_mat)
-                kl_scores = torch.cat((kl_scores, score.unsqueeze(0)), 0)
-            return torch.mean(kl_scores)
+                kl_scores.append(score.unsqueeze(0))
+            return torch.mean(torch.cat(kl_scores, 0))
 
         @staticmethod
         # function to calculate the kl div of 2 tensors
