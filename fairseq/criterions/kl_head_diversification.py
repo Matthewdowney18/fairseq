@@ -88,13 +88,18 @@ class KLHeadDiversificationCriterion(FairseqCriterion):
             """weights = list(tesnor([num_heads, batch_size, dim_q, dim_k]))"""
             kl_scores = torch.tensor([])
             for weight in weights:
-                p_mat = torch.tensor([])
-                q_mat = torch.tensor([])
+                # need to say what gpu to send tensor
+                # concat is very bad
+                # create python lists and concatinate at the end
+                p_mats = list()
+                q_mats = list()
                 num_heads = weight.size(0)
                 for i in range(0, num_heads):
                     for j in range(i + 1, num_heads):
-                        p_mat = torch.cat((p_mat, weight[i, :, :, :].unsqueeze(0)), 0)
-                        q_mat = torch.cat((q_mat, weight[j, :, :, :].unsqueeze(0)), 0)
+                        p_mats.append(weight[i, :, :, :].unsqueeze(0))
+                        q_mats.append(weight[j, :, :, :].unsqueeze(0))
+                p_mat = torch.cat(p_mats, 0)
+                q_mat = torch.cat(q_mats, 0)
                 score = self.KL_div(p_mat, q_mat)
                 kl_scores = torch.cat((kl_scores, score.unsqueeze(0)), 0)
             return torch.mean(kl_scores)
