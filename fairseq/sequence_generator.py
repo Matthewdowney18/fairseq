@@ -327,13 +327,13 @@ class SequenceGenerator(object):
                                 gen_ngrams[bbsz_idx].get(tuple(ngram[:-1]), []) + [ngram[-1]]
 
             # Record attention scores
-            if type(avg_attn_scores) is list:
-                avg_attn_scores = avg_attn_scores[0]
-            if avg_attn_scores is not None:
-                if attn is None:
-                    attn = scores.new(bsz * beam_size, avg_attn_scores.size(1), max_len + 2)
-                    attn_buf = attn.clone()
-                attn[:, :, step + 1].copy_(avg_attn_scores)
+            #if type(avg_attn_scores) is list:
+            #    avg_attn_scores = avg_attn_scores[0]
+            #if avg_attn_scores is not None:
+            #    if attn is None:
+            #        attn = scores.new(bsz * beam_size, avg_attn_scores.size(1), max_len + 2)
+            #        attn_buf = attn.clone()
+            #    attn[:, :, step + 1].copy_(avg_attn_scores)
 
             scores = scores.type_as(lprobs)
             scores_buf = scores_buf.type_as(lprobs)
