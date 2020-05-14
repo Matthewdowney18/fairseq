@@ -33,6 +33,7 @@ class KLHeadDiversificationCriterion(FairseqCriterion):
             """
             net_output = model(**sample['net_input'])
             loss, kl_reg = self.compute_loss(model, net_output, sample, reduce=reduce)
+            # sentence_avg is false
             sample_size = sample['target'].size(0) if self.sentence_avg else sample['ntokens']
             logging_output = {
                 'loss': loss.data,
@@ -68,9 +69,10 @@ class KLHeadDiversificationCriterion(FairseqCriterion):
             kl_sum = sum(log.get('kl_reg', 0) for log in logging_outputs)
             ntokens = sum(log.get('ntokens', 0) for log in logging_outputs)
             sample_size = sum(log.get('sample_size', 0) for log in logging_outputs)
-
+            # sample size is denominator for gradient
             metrics.log_scalar('loss', loss_sum / sample_size / math.log(2), sample_size, round=3)
-            metrics.log_scalar("kl_reg", kl_sum / sample_size , sample_size, round=10)
+            # im not sure how correct this is
+            metrics.log_scalar("kl_reg", kl_sum / sample_size, sample_size, round=10)
             if sample_size != ntokens:
                 metrics.log_scalar('nll_loss', loss_sum / ntokens / math.log(2), ntokens, round=3)
                 metrics.log_derived('ppl', lambda meters: utils.get_perplexity(meters['nll_loss'].avg))
@@ -104,7 +106,11 @@ class KLHeadDiversificationCriterion(FairseqCriterion):
                 q_mat = torch.cat(q_mats, 0)
                 score = self.KL_div(p_mat, q_mat)
                 kl_scores.append(score.unsqueeze(0))
-            return torch.mean(torch.cat(kl_scores, 0))
+            # already sum or tgt_seq
+            # want to sum over src_seq, batch_sixe
+            # want to take mean over num_combos and num_modules
+            # want to divide by num_combos*num_modules
+            return torch.sum(torch.cat(kl_scores, 0)) / len(kl_scores) / len(p_mats)
 
         @staticmethod
         # function to calculate the kl div of 2 tensors
@@ -128,4 +134,5 @@ class KLHeadDiversificationCriterion(FairseqCriterion):
             # I have not figured out how to divide by the sum yet
             # q /= q.sum(-1)
 
-            return torch.mean(torch.sum(F.kl_div(torch.log(q), p, reduction="none"), -1))
+            #do not average because loss is not normalized
+            return F.kl_div(torch.log(q), p, reduction="sum")
