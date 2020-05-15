@@ -443,7 +443,7 @@ class TransformerEncoder(FairseqEncoder):
 
         # encoder layers
         for layer in self.layers:
-            x, attn = layer(x, encoder_padding_mask)
+            x, attn = layer(x, encoder_padding_mask, need_head_weights=True, need_attn=True)
 
             if need_attn:
                 weights += attn
@@ -806,8 +806,8 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 incremental_state,
                 self_attn_mask=self_attn_mask,
                 self_attn_padding_mask=self_attn_padding_mask,
-                need_attn=bool((idx == alignment_layer)),
-                need_head_weights=bool((idx == alignment_layer)),
+                need_attn=need_attn,
+                need_head_weights=need_head_weights,
             )
             inner_states.append(x)
             if layer_attn is not None and idx == alignment_layer:
