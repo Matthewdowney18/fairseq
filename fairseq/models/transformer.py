@@ -428,8 +428,8 @@ class TransformerEncoder(FairseqEncoder):
         else:
             weights = None
 
-        if self.layer_wise_attention:
-            return_all_hiddens = True
+        #if self.layer_wise_attention:
+        #    return_all_hiddens = True
 
         x, encoder_embedding = self.forward_embedding(src_tokens)
 
