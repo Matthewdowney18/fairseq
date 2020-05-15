@@ -45,6 +45,7 @@ def get_interactive_generation_parser(default_task="translation"):
 def get_eval_lm_parser(default_task="language_modeling"):
     parser = get_parser("Evaluate Language Model", default_task)
     add_dataset_args(parser, gen=True)
+    add_distributed_training_args(parser, default_world_size=1)
     add_eval_lm_args(parser)
     return parser
 
@@ -231,6 +232,13 @@ def get_parser(desc, default_task="translation"):
                         help='how often to clear the PyTorch CUDA cache (0 to disable)')
     parser.add_argument('--all-gather-list-size', default=16384, type=int,
                         help='number of bytes reserved for gathering stats from workers')
+    parser.add_argument('--model-parallel-size', type=int, metavar='N',
+                        default=1,
+                        help='total number of GPUs to parallelize model over')
+    parser.add_argument('--checkpoint-suffix', default='',
+                        help='suffix to add to the checkpoint file name')
+    parser.add_argument('--quantization-config-path', default=None,
+                        help='path to quantization config file')
 
     from fairseq.registry import REGISTRIES
     for registry_name, REGISTRY in REGISTRIES.items():
@@ -311,6 +319,8 @@ def add_dataset_args(parser, train=False, gen=False):
     parser.add_argument('--dataset-impl', metavar='FORMAT',
                         choices=get_available_dataset_impl(),
                         help='output dataset implementation')
+    group.add_argument('--data-buffer-size', default=0, type=int, metavar='N',
+                        help='Number of batches to preload')
     if train:
         group.add_argument('--train-subset', default='train', metavar='SPLIT',
                            help='data subset to use for training (e.g. train, valid, test)')
@@ -342,11 +352,13 @@ def add_dataset_args(parser, train=False, gen=False):
     return group
 
 
-def add_distributed_training_args(parser):
+def add_distributed_training_args(parser, default_world_size=None):
     group = parser.add_argument_group("Distributed training")
     # fmt: off
+    if default_world_size is None:
+        default_world_size = max(1, torch.cuda.device_count())
     group.add_argument('--distributed-world-size', type=int, metavar='N',
-                       default=max(1, torch.cuda.device_count()),
+                       default=default_world_size,
                        help='total number of GPUs across all nodes (default: all visible GPUs)')
     group.add_argument('--distributed-rank', default=0, type=int,
                        help='rank of the current worker')
@@ -383,6 +395,23 @@ def add_distributed_training_args(parser):
     group.add_argument('--broadcast-buffers', default=False, action='store_true',
                        help='Copy non-trainable parameters between GPUs, such as '
                       'batchnorm population statistics')
+
+    group.add_argument('--distributed-wrapper', default='DDP', type=str,
+                       choices=['DDP', 'SlowMo'],
+                       help='DistributedDataParallel backend')
+    # Add arguments for SlowMo - these will be used when SlowMo is enabled via above
+    group.add_argument('--slowmo-momentum', default=None, type=float,
+                       help='SlowMo momentum term; by default use 0.0 for 16 GPUs, '
+                            '0.2 for 32 GPUs; 0.5 for 64 GPUs, 0.6 for > 64 GPUs')
+    group.add_argument('--slowmo-algorithm', default='LocalSGD', choices=['LocalSGD', 'SGP'],
+                       help='whether to use LocalSGD or SGP')
+    group.add_argument('--localsgd-frequency', default=3, type=int,
+                       help='Local SGD allreduce frequency')
+    group.add_argument('--nprocs-per-node', type=int, metavar='N',
+                       default=max(1, torch.cuda.device_count()),
+                       help='number of GPUs in each node. An allreduce operation across GPUs in '
+                            'a node is very fast. Hence, we do allreduce across GPUs in a node, '
+                            'and gossip across different nodes')
     # fmt: on
     return group
 
