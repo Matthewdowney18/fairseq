@@ -810,15 +810,15 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 need_head_weights=need_head_weights,
             )
             inner_states.append(x)
-            if layer_attn is not None and idx == alignment_layer:
-                attn = layer_attn.float().to(x)
+            #if layer_attn is not None and idx == alignment_layer:
+            #    attn = layer_attn.float().to(x)
 
             if need_attn:
                     weights+=layer_attn
 
-        if attn is not None:
-            if alignment_heads is not None:
-                attn = attn[:alignment_heads]
+        #if attn is not None:
+        #    if alignment_heads is not None:
+        #        attn = attn[:alignment_heads]
 
             # average probabilities over heads
         #   attn = attn.mean(dim=0)
