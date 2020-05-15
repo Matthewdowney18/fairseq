@@ -443,7 +443,7 @@ class TransformerEncoder(FairseqEncoder):
 
         # encoder layers
         for layer in self.layers:
-            x = layer(x, encoder_padding_mask)
+            x, attn = layer(x, encoder_padding_mask)
 
             if need_attn:
                 weights += attn
