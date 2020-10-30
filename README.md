@@ -3,10 +3,9 @@
 This is an unofficial branch of fariseq that adds wandb.ai support.
 Fairseq authors does not seem to accept [my PR](https://github.com/pytorch/fairseq/issues/1790) so I decided to maintain this branch.
 
-KL_Heads
-Experimental loss penalty to maximize kl-divergence between heads attention weights
--Loss function in fairseq/criterions/kl_head_diversification.py
--Also returns attention weights from transformer
+KL_Heads - Experimental loss penalty to maximize kl-divergence between heads attention weights. 
+Loss function in fairseq/criterions/kl_head_diversification.py.
+Also added functionality to return attention weights from transformer.
 
 <p align="center">
   <img src="fairseq_logo.png" width="150">
